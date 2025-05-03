@@ -40,11 +40,11 @@ class AlertEntity(Entity):
         state: str,
         repeat: list[float],
         skip_first: bool,
-        message_template: Template | None,
-        done_message_template: Template | None,
+        message_template: Template | str | None,
+        done_message_template: Template | str | None,
         notifiers: list[str],
         can_ack: bool,
-        title_template: Template | None,
+        title_template: Template | str | None,
         data: dict[Any, Any],
     ) -> None:
         """Initialize the alert."""
@@ -54,9 +54,10 @@ class AlertEntity(Entity):
         self._skip_first = skip_first
         self._data = data
 
-        self._message_template = message_template
-        self._done_message_template = done_message_template
-        self._title_template = title_template
+        # Process templates
+        self._message_template = self._process_template(message_template)
+        self._done_message_template = self._process_template(done_message_template)
+        self._title_template = self._process_template(title_template)
 
         self._notifiers = notifiers
         self._can_ack = can_ack
@@ -73,6 +74,19 @@ class AlertEntity(Entity):
         async_track_state_change_event(
             hass, [watched_entity_id], self.watched_entity_change
         )
+
+    def _process_template(
+        self, template_value: Template | str | None
+    ) -> Template | None:
+        """Process a template or string into a template."""
+        if template_value is None:
+            return None
+        if isinstance(template_value, Template):
+            return template_value
+        # Convert string to template
+        template = Template(template_value, self.hass)
+        template.hass = self.hass
+        return template
 
     @property
     def state(self) -> str:
@@ -152,13 +166,13 @@ class AlertEntity(Entity):
 
     async def _notify_done_message(self) -> None:
         """Send notification of complete alert."""
-        LOGGER.info("Alerting: %s", self._done_message_template)
         self._send_done_message = False
 
         if self._done_message_template is None:
             return
 
         message = self._done_message_template.async_render(parse_result=False)
+        LOGGER.info("Alerting: %s", message)
 
         await self._send_notification_message(message)
 

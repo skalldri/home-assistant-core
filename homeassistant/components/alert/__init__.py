@@ -2,8 +2,11 @@
 
 from __future__ import annotations
 
+import asyncio
+
 import voluptuous as vol
 
+from homeassistant.config_entries import SOURCE_IMPORT, ConfigEntry
 from homeassistant.const import (
     CONF_ENTITY_ID,
     CONF_NAME,
@@ -66,49 +69,72 @@ async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
     """Set up the Alert component."""
     component = EntityComponent[AlertEntity](LOGGER, DOMAIN, hass)
 
-    entities: list[AlertEntity] = []
-
-    for object_id, cfg in config[DOMAIN].items():
-        if not cfg:
-            cfg = {}
-
-        name = cfg[CONF_NAME]
-        watched_entity_id = cfg[CONF_ENTITY_ID]
-        alert_state = cfg[CONF_STATE]
-        repeat = cfg[CONF_REPEAT]
-        skip_first = cfg[CONF_SKIP_FIRST]
-        message_template = cfg.get(CONF_ALERT_MESSAGE)
-        done_message_template = cfg.get(CONF_DONE_MESSAGE)
-        notifiers = cfg[CONF_NOTIFIERS]
-        can_ack = cfg[CONF_CAN_ACK]
-        title_template = cfg.get(CONF_TITLE)
-        data = cfg.get(CONF_DATA)
-
-        entities.append(
-            AlertEntity(
-                hass,
-                object_id,
-                name,
-                watched_entity_id,
-                alert_state,
-                repeat,
-                skip_first,
-                message_template,
-                done_message_template,
-                notifiers,
-                can_ack,
-                title_template,
-                data,
+    # Process YAML configuration and create config entries
+    if config.get(DOMAIN):
+        for object_id, cfg in config[DOMAIN].items():
+            hass.async_create_task(
+                hass.config_entries.flow.async_init(
+                    DOMAIN,
+                    context={"source": SOURCE_IMPORT},
+                    data={
+                        **cfg,
+                        "object_id": object_id,
+                    },
+                )
             )
-        )
-
-    if not entities:
-        return False
 
     component.async_register_entity_service(SERVICE_TURN_OFF, None, "async_turn_off")
     component.async_register_entity_service(SERVICE_TURN_ON, None, "async_turn_on")
     component.async_register_entity_service(SERVICE_TOGGLE, None, "async_toggle")
 
-    await component.async_add_entities(entities)
+    return True
+
+
+async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
+    """Set up Alert from a config entry."""
+    component = EntityComponent[AlertEntity](LOGGER, DOMAIN, hass)
+
+    data = dict(entry.data)
+
+    # If options exist, they take precedence over data
+    if entry.options:
+        data.update(entry.options)
+
+    entity = AlertEntity(
+        hass,
+        entry.entry_id,
+        data[CONF_NAME],
+        data[CONF_ENTITY_ID],
+        data[CONF_STATE],
+        data[CONF_REPEAT],
+        data[CONF_SKIP_FIRST],
+        data.get(CONF_ALERT_MESSAGE),
+        data.get(CONF_DONE_MESSAGE),
+        data[CONF_NOTIFIERS],
+        data[CONF_CAN_ACK],
+        data.get(CONF_TITLE),
+        data.get(CONF_DATA, {}),
+    )
+
+    await component.async_add_entities([entity])
+
+    # Register update listener to handle options updates
+    entry.async_on_unload(entry.add_update_listener(config_entry_update_listener))
+
+    return True
+
+
+async def config_entry_update_listener(hass: HomeAssistant, entry: ConfigEntry) -> None:
+    """Update listener, called when the config entry options are changed."""
+    await hass.config_entries.async_reload(entry.entry_id)
+
+
+async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
+    """Unload a config entry."""
+    entity_registry = hass.helpers.entity_registry.async_get(hass)
+    entities = entity_registry.async_entries_for_config_entry(entry.entry_id)
+
+    for entity in entities:
+        entity_registry.async_remove(entity.entity_id)
 
     return True

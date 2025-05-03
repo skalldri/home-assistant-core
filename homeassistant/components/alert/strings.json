@@ -10,6 +10,50 @@
       }
     }
   },
+  "config": {
+    "step": {
+      "user": {
+        "title": "Add Alert",
+        "description": "Create an alert that will notify you when a certain condition is met",
+        "data": {
+          "name": "Name",
+          "entity_id": "Entity to monitor",
+          "state": "State to trigger alert",
+          "repeat": "Notification interval (minutes)",
+          "skip_first": "Skip first notification",
+          "notifiers": "Notification services",
+          "can_acknowledge": "Allow acknowledging the alert",
+          "message": "Alert message (optional)",
+          "done_message": "Done message (optional)",
+          "title": "Notification title (optional)",
+          "data": "Additional notification data (optional)"
+        }
+      }
+    },
+    "abort": {
+      "already_configured": "This alert is already configured"
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "Edit Alert",
+        "description": "Modify alert settings",
+        "data": {
+          "entity_id": "Entity to monitor",
+          "state": "State to trigger alert",
+          "repeat": "Notification interval (minutes)",
+          "skip_first": "Skip first notification",
+          "notifiers": "Notification services",
+          "can_acknowledge": "Allow acknowledging the alert",
+          "message": "Alert message (optional)",
+          "done_message": "Done message (optional)",
+          "title": "Notification title (optional)",
+          "data": "Additional notification data (optional)"
+        }
+      }
+    }
+  },
   "services": {
     "toggle": {
       "name": "[%key:common::action::toggle%]",
