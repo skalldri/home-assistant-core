@@ -7,7 +7,12 @@ from typing import Any
 import voluptuous as vol
 
 from homeassistant.components.notify import DOMAIN as NOTIFY_DOMAIN
-from homeassistant.config_entries import ConfigEntry, OptionsFlow
+from homeassistant.config_entries import (
+    ConfigEntry,
+    ConfigFlow,
+    ConfigFlowResult,
+    OptionsFlow,
+)
 from homeassistant.const import (
     CONF_ENTITY_ID,
     CONF_NAME,
@@ -62,12 +67,19 @@ CONFIG_SCHEMA = vol.Schema(
         vol.Required(CONF_NAME): cv.string,
         vol.Required(CONF_ENTITY_ID): selector.EntitySelector(),
         vol.Optional(CONF_STATE, default=STATE_ON): cv.string,
-        vol.Required(CONF_REPEAT): vol.All(
-            cv.ensure_list,
-            [vol.Coerce(float)],
-            # Minimum delay is 1 second = 0.016 minutes
-            [vol.Range(min=0.016)],
+        # TODO we should allow this to be a list of numbers
+        vol.Required(CONF_REPEAT): selector.NumberSelector(
+            # TODO figure out how to make a number selector with infinite upper bound
+            config=selector.NumberSelectorConfig(
+                min=0.016, max=10000000, mode=selector.NumberSelectorMode.BOX
+            ),
         ),
+        # vol.All(
+        #     cv.ensure_list,
+        #     [vol.Coerce(float)],
+        #     # Minimum delay is 1 second = 0.016 minutes
+        #     [vol.Range(min=0.016)],
+        # ),
         vol.Optional(CONF_CAN_ACK, default=DEFAULT_CAN_ACK): selector.BooleanSelector(),
         vol.Optional(
             CONF_SKIP_FIRST, default=DEFAULT_SKIP_FIRST
@@ -75,8 +87,45 @@ CONFIG_SCHEMA = vol.Schema(
         vol.Optional(CONF_ALERT_MESSAGE): cv.string,
         vol.Optional(CONF_DONE_MESSAGE): cv.string,
         vol.Optional(CONF_TITLE): cv.string,
-        vol.Optional(CONF_DATA): dict,
-        vol.Optional(CONF_NOTIFIERS, default=[]): vol.All(cv.ensure_list, [cv.string]),
+        # TODO how do we do dicts? this doesn't work
+        # vol.Optional(CONF_DATA): dict,
+        # TODO notifier selector???
+        vol.Optional(CONF_NOTIFIERS, default=[]): selector.EntitySelector(
+            config=selector.EntitySelectorConfig(domain="notify", multiple=True)
+        ),
+    }
+)
+
+OPTIONS_SCHEMA = vol.Schema(
+    {
+        vol.Required(CONF_ENTITY_ID): selector.EntitySelector(),
+        vol.Optional(CONF_STATE, default=STATE_ON): cv.string,
+        # TODO we should allow this to be a list of numbers
+        vol.Required(CONF_REPEAT): selector.NumberSelector(
+            # TODO figure out how to make a number selector with infinite upper bound
+            config=selector.NumberSelectorConfig(
+                min=0.016, max=10000000, mode=selector.NumberSelectorMode.BOX
+            ),
+        ),
+        # vol.All(
+        #     cv.ensure_list,
+        #     [vol.Coerce(float)],
+        #     # Minimum delay is 1 second = 0.016 minutes
+        #     [vol.Range(min=0.016)],
+        # ),
+        vol.Optional(CONF_CAN_ACK, default=DEFAULT_CAN_ACK): selector.BooleanSelector(),
+        vol.Optional(
+            CONF_SKIP_FIRST, default=DEFAULT_SKIP_FIRST
+        ): selector.BooleanSelector(),
+        vol.Optional(CONF_ALERT_MESSAGE): cv.string,
+        vol.Optional(CONF_DONE_MESSAGE): cv.string,
+        vol.Optional(CONF_TITLE): cv.string,
+        # TODO how do we do dicts? this doesn't work
+        # vol.Optional(CONF_DATA): dict,
+        # TODO notifier selector???
+        vol.Optional(CONF_NOTIFIERS, default=[]): selector.EntitySelector(
+            config=selector.EntitySelectorConfig(domain="notify", multiple=True)
+        ),
     }
 )
 
@@ -88,7 +137,7 @@ CONFIG_FLOW = {
 }
 
 
-class AlertConfigFlowHandler(SchemaConfigFlowHandler, domain=DOMAIN):
+class AlertConfigFlowHandler(ConfigFlow, domain=DOMAIN):
     """Handle Alert config flow."""
 
     config_flow = CONFIG_FLOW
@@ -100,91 +149,36 @@ class AlertConfigFlowHandler(SchemaConfigFlowHandler, domain=DOMAIN):
 
     async def async_step_user(
         self, user_input: dict[str, Any] | None = None
-    ) -> FlowResult:
+    ) -> ConfigFlowResult:
         """Handle the initial step."""
-        if user_input is None:
-            schema = self.add_suggested_values_to_schema(CONFIG_SCHEMA, {})
-            available_notifiers = await _get_notifiers(self.hass)
-            schema = schema.extend(
-                {
-                    vol.Optional(CONF_NOTIFIERS, default=[]): selector.SelectSelector(
-                        selector.SelectSelectorConfig(
-                            options=[
-                                {"label": notifier, "value": notifier}
-                                for notifier in available_notifiers
-                            ],
-                            multiple=True,
-                            mode=selector.SelectSelectorMode.DROPDOWN,
-                        )
-                    ),
-                }
-            )
-            return self.async_show_form(step_id="user", data_schema=schema)
-
-        errors = {}
-
-        # Add additional validation as needed
-        user_input = await _validate_input(self, user_input)
-
-        if not errors:
+        if user_input is not None:
             return self.async_create_entry(title=user_input[CONF_NAME], data=user_input)
 
-        return self.async_show_form(
-            step_id="user",
-            data_schema=self.add_suggested_values_to_schema(CONFIG_SCHEMA, user_input),
-            errors=errors,
-        )
+        ##return self.async_show_form(step_id="user", data_schema=CONFIG_SCHEMA)
+        return self.async_show_form(step_id="user", data_schema=CONFIG_SCHEMA)
 
-    @classmethod
+    @staticmethod
     @callback
-    def async_get_options_flow(cls, config_entry: ConfigEntry) -> OptionsFlow:
-        """Get the options flow for this handler."""
-        return AlertOptionsFlowHandler(config_entry)
+    def async_get_options_flow(
+        config_entry: ConfigEntry,
+    ) -> AlertOptionsFlowHandler:
+        """Return the options flow."""
+        return AlertOptionsFlowHandler()
 
 
-class AlertOptionsFlowHandler(SchemaConfigFlowHandler):
+class AlertOptionsFlowHandler(OptionsFlow):
     """Handle Alert options flow."""
-
-    def __init__(self, config_entry: ConfigEntry) -> None:
-        """Initialize options flow."""
-        self.config_entry = config_entry
-        super().__init__(config_entry.options)
 
     async def async_step_init(
         self, user_input: dict[str, Any] | None = None
-    ) -> FlowResult:
-        """Manage the options."""
-        if user_input is None:
-            schema = self.add_suggested_values_to_schema(
-                CONFIG_SCHEMA, self.config_entry.data
-            )
-            available_notifiers = await _get_notifiers(self.hass)
-            schema = schema.extend(
-                {
-                    vol.Optional(CONF_NOTIFIERS, default=[]): selector.SelectSelector(
-                        selector.SelectSelectorConfig(
-                            options=[
-                                {"label": notifier, "value": notifier}
-                                for notifier in available_notifiers
-                            ],
-                            multiple=True,
-                            mode=selector.SelectSelectorMode.DROPDOWN,
-                        )
-                    ),
-                }
-            )
-            return self.async_show_form(step_id="init", data_schema=schema)
-
-        errors = {}
-
-        # Add additional validation as needed
-        user_input = await _validate_input(self, user_input)
-
-        if not errors:
-            return self.async_create_entry(title="", data=user_input)
+    ) -> ConfigFlowResult:
+        """Handle the initial step."""
+        if user_input is not None:
+            return self.async_create_entry(data=user_input)
 
         return self.async_show_form(
             step_id="init",
-            data_schema=self.add_suggested_values_to_schema(CONFIG_SCHEMA, user_input),
-            errors=errors,
+            data_schema=self.add_suggested_values_to_schema(
+                OPTIONS_SCHEMA, self.config_entry.options
+            ),
         )

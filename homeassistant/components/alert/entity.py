@@ -69,7 +69,8 @@ class AlertEntity(Entity):
         self._ack = False
         self._cancel: Callable[[], None] | None = None
         self._send_done_message = False
-        self.entity_id = f"{DOMAIN}.{entity_id}"
+        # SEEMS LIKE WE DON"T ACTUALLY NEED TO SET THIS?
+        # self.entity_id = f"{DOMAIN}.{entity_id}"
 
         async_track_state_change_event(
             hass, [watched_entity_id], self.watched_entity_change
